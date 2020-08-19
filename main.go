@@ -19,7 +19,8 @@ import (
 )
 
 // var metric = "euclidean"
-var metric = "cosine"
+
+var metric = "euclidean"
 
 // Vamana is the graph constructed on the dataset
 type Vamana struct {
@@ -32,10 +33,9 @@ type Vamana struct {
 	vocabs      []string
 	vectors     [][]float64
 	nout        [][]int
-
-	M         int
-	K         int
-	codewords [][][]float64
+	M           int
+	K           int
+	codewords   [][][]float64
 }
 
 func main() {
@@ -50,7 +50,7 @@ func main() {
 	vam := &(Vamana{
 		rawDataPath: "../raw_data/glove.6B/glove.6B.300d.txt",
 		vocabCount:  vocabCount,
-		R:           50,
+		R:           20,
 		dim:         300,
 		vocabs:      make([]string, 0, vocabCount),    // list of vocabs
 		vectors:     make([][]float64, 0, vocabCount), // corresponding vectors for the vocabs
@@ -89,6 +89,35 @@ func main() {
 	// was started in IndexRawData to finish before returning. Note that vam.compressVectors also saves its resulting codebook to
 	// disk after compression is done
 	wg.Wait()
+
+	// calculate average out-degree of graph
+	avgd := 0
+
+	mind := 1 // minimum degree
+	maxd := 0 // max degree
+
+	minIndex := 0 // index for min
+	maxIndex := 0 // index for max
+
+	for i := 0; i < vocabCount; i++ {
+		// fmt.Println(vam.nout[i])
+		l := len(vam.nout[i])
+		avgd += l
+
+		if l > maxd {
+			maxd = l
+			maxIndex = i
+		}
+		if l <= mind {
+			mind = l
+			minIndex = i
+		}
+	}
+	fmt.Println("Average out-degree of "+metric+" graph: ", float64(avgd)/float64(vocabCount))
+	fmt.Println("Max out-degree of "+metric+" graph: ", maxd, " >> ", vam.vocabs[maxIndex], " >> ", vam.nout[maxIndex])
+	fmt.Println("Min out-degree of "+metric+" graph: ", mind, " >> ", vam.vocabs[minIndex], " >> ", vam.nout[minIndex])
+
+	fmt.Println()
 }
 
 // finds codewords (K different codewords) for each subspace (M of them), writes them to file, then
@@ -195,7 +224,7 @@ func (vam *Vamana) pq() {
 			centroids := vam.kMeansPlusPlusInit(K, ds, m)
 			iterationCount := 0
 
-			for iterationCount <= 30 {
+			for iterationCount <= 100 {
 				// initialize vars that will be used in calculating means of
 				// vectors assigned to various centroids. These means will
 				// become the new centroids
@@ -420,7 +449,7 @@ func (vam *Vamana) writeGraphToBadger(from int, to int, db *badger.DB, wg *sync.
 // IndexRawData constructs a vamana index on the raw data
 func (vam *Vamana) IndexRawData(callback func()) {
 
-	const lConst = 10
+	const lConst = 25
 
 	//1. Initialize G to random R-regular directed graph
 
@@ -640,6 +669,41 @@ func euclidean(a, b []float64) float64 {
 	return acc
 	// return math.Sqrt(acc)
 }
+
+// func euclidean(a, b []float64) float64 {
+
+// 	l := len(a) / 4
+// 	var acc float64
+
+// 	for i := 0; i < l; i++ {
+
+// 		ta := a[4*i : 4*(i+1)]
+// 		tb := b[4*i : 4*(i+1)]
+
+// 		var newa simd.Vec64
+// 		var newb simd.Vec64
+
+// 		for i := 0; i < 4; i++ {
+// 			newa[i] = ta[i]
+// 			newb[i] = tb[i]
+// 		}
+
+// 		// newa[0] = ta[0]
+// 		// newa[1] = ta[1]
+// 		// newa[2] = ta[2]
+// 		// newa[3] = ta[3]
+
+// 		// newb[0] = tb[0]
+// 		// newb[1] = tb[1]
+// 		// newb[2] = tb[2]
+// 		// newb[3] = tb[3]
+
+// 		f := simd.Vec64Sub(newa, newb)
+// 		g := simd.Vec64Mul(f, f)
+// 		acc += (g[0] + g[1] + g[2] + g[3])
+// 	}
+// 	return acc
+// }
 
 func (vam *Vamana) d(a, b int) float64 {
 	return L2(vam.vectors[a], vam.vectors[b])
